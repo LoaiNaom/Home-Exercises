@@ -1,0 +1,131 @@
+---
+title: "Ex.2 Homework"
+author: "Loai Naom"
+date: "09/11/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+counts_file <- system.file("extdata/rna-seq/SRP029880.raw_counts.tsv",
+package = "compGenomRData")
+coldata_file <- system.file("extdata/rna-seq/SRP029880.colData.tsv",
+package = "compGenomRData")
+
+```
+
+## Question 1
+```{r}
+
+counts_mat <- as.matrix(read.table(counts_file, header = T, sep = '\t'))
+geneLengths_vec <- as.vector(subset(counts_mat, select = c(width)))
+
+rpkm <- apply(X = subset(counts_mat, select = c(-width)),
+              MARGIN = 2, 
+              FUN = function(x) {
+                (10^9 * x) / geneLengths_vec * sum(as.numeric(x))
+               })
+colSums(rpkm)
+
+tpmscores <- apply(rpkm, 2, function(x) {(x / sum(as.numeric(x))) * 10^6}) 
+
+colSums(tpmscores)
+                   
+```
+
+
+## Question 2
+```{r}
+var_genes <- apply(tpmscores, 1, var) #first we find the variance of each gene in tpmscores.
+top500 <- names(sort(var_genes, decreasing=TRUE))[1:500] #most 500 variable genes
+head(top500)
+top100 <- names(sort(var_genes, decreasing=TRUE))[1:100] #top 100
+head(top100)
+
+Variable_Genes_table <- tpmscores[top500,]
+heatmap(Variable_Genes_table, scale = 'row', main="the most 500 variable genes from tpmscores")
+
+Variable_Genes_table2 <- tpmscores[top100,]
+heatmap(Variable_Genes_table2, scale = 'row', main="the most 100 variable genes from tpmscores")
+
+```
+
+## Question 3
+```{r}
+heatmap(Variable_Genes_table, main="the most 500 variable genes from tpmscores", scale = "none")
+heatmap(Variable_Genes_table2, main="the most 100 variable genes from tpmscores", scale = "none")
+
+heatmap(Variable_Genes_table, main="the most 500 variable genes from tpmscores", scale = "column")
+heatmap(Variable_Genes_table2, main="the most 100 variable genes from tpmscores", scale = "column")
+
+heatmap(Variable_Genes_table, main="the most 500 variable genes from tpmscores", scale = "row")
+heatmap(Variable_Genes_table2, main="the most 100 variable genes from tpmscores", scale = "row")
+
+```
+
+
+## Question 4
+```{r}
+
+library(corrplot)
+corr_Matrix <- cor(tpmscores) #pairwise correlation scores between every pair of samples
+
+corrplot(corr_Matrix, method = 'ellipse', 
+         order = 'hclust', addCoef.col = 'white', 
+         number.cex = 0.5, hclust.method = 'average', type = 'upper' )
+
+
+```
+
+## Question 5
+```{r}
+library(pheatmap)
+
+top_exp <- rowSums(tpmscores) 
+top_100_exp <- names(sort(top_exp, decreasing=TRUE))[1:100]
+
+Genes_table_100 <- tpmscores[top_100_exp,]
+
+pheatmap(Genes_table_100,scale = 'row',show_rownames = FALSE, main="the most 100 expressed genes from tpmscores")
+
+#library(devtools)
+#install_github('sinhrks/ggfortify')
+library(ggfortify); library(ggplot2)
+colData <- read.table(coldata_file, header = T, sep = '\t', 
+                      stringsAsFactors = TRUE)
+ReductionPlot <- t(tpmscores[top_100_exp,])
+ReductionPlot <- log2(ReductionPlot + 1)
+PCA_Results <- prcomp(ReductionPlot)
+autoplot(PCA_Results, data = colData, colour = 'group', main='PCA PLOT')
+
+```
+
+## Question 6
+```{r}
+colData$BATCH <- c('batch1','batch1','batch1','batch1','batch1','batch2',
+                   'batch2','batch2','batch2','batch2')
+
+pheatmap(Genes_table_100, show_rownames = FALSE, annotation_col = colData, main = "The most 100 expressed genes", scale = 'row')
+
+pca_plot <- prcomp(t(Genes_table_100))
+autoplot(pca_plot, data = colData, colour= 'BATCH', main='PCA plot')
+```
+
+## Question 7
+```{r}
+library(tidyr)
+is.na(tpmscores) %>% table() #make sure there are no NA values in the dataframe
+
+dim(tpmscores)
+
+nonzero_tpm <- tpmscores[rowSums(tpmscores) > 0, ] #filtered row read count above 0 
+dim(nonzero_tpm)
+
+pheatmap(nonzero_tpm, scale='row', show_rownames=FALSE, main='All genes')
+
+```
+
