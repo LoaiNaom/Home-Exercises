@@ -1,0 +1,167 @@
+---
+title: "Ex.3"
+author: "Loai Naom"
+date: "17/11/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+---
+title: "Ex.3"
+author: "Loai Naom"
+date: "12/11/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+#library(compGenomRData)
+counts_file <- system.file("extdata/rna-seq/SRP029880.raw_counts.tsv",
+                           package = "compGenomRData")
+coldata_file <- system.file("extdata/rna-seq/SRP029880.colData.tsv",
+                            package = "compGenomRData")
+
+counts <- read.table(counts_file, header = T, sep = '\t')
+#remove the 'width' column
+countData <- as.matrix(subset(counts, select = c(-width)))
+
+colData <- read.table(coldata_file, header = T, sep = '\t',
+                      stringsAsFactors = TRUE) 
+```
+
+
+## Question 1
+```{r}
+library(DESeq2)
+dds <- DESeqDataSetFromMatrix(countData = countData,
+                              colData = colData,
+                              design = ~ group)
+print(dds)
+filteration <- rowSums(DESeq2::counts(dds)) >= 10
+
+dds <- dds[filteration, ]
+
+dds <- DESeq(dds)
+
+DEresults = results(dds, contrast = c("group", 'CASE', 'CTRL'))
+DEresultsDf <-as.data.frame(DEresults)
+
+library(ggplot2)
+
+ggplot()+
+  geom_point(data = DEresultsDf, 
+             mapping = aes(x = log2FoldChange, y = -log10(pvalue)), 
+             col = "grey80", size =1) +
+  geom_point(data = subset(DEresultsDf, log2FoldChange > 1 & pvalue < 0.05), 
+             aes(log2FoldChange, -log10(pvalue)), color = "red", size =1)+
+  geom_point(data = subset(DEresultsDf, log2FoldChange < 1 & pvalue < 0.05), 
+             aes(log2FoldChange, -log10(pvalue)), color = "steelblue2", size =1)+
+  theme_bw()+
+  theme(legend.title =element_blank())+
+  labs(x = "log2 (Fold change of case vs. control)", y= "-log10(P-value)")
+```
+
+## Question 2
+```{r}
+
+# plotDistEsts is a function that plots the per-gene dispersion estimates together with the fitted mean-dispersion relationship.
+
+plotDispEsts(dds, CV = F, genecol = "black", fitcol = "red",
+             finalcol = "dodgerblue", legend = TRUE, log = "xy", cex = 0.5)
+
+```
+
+## Question 3
+```{r}
+# the default value is zero.
+# It is possible to provide thresholds for constructing Wald tests of significance.
+# changing the threshold to 1 means that more genes will be considered differentially expressed 
+```
+
+## Question 4
+```{r}
+# The goal of independent filtering is to filter out those genes from the procedure that have no, or little chance of showing significance, without even looking at their test statistic. Typically, this results in increased detection power of type I error. Those genes are not informative thus they can be removed from the data set even if those genes are biologically interesting. Not using filtering results in fewer identification of significant genes. 
+```
+
+## Question 5
+```{r}
+#DE with edgeR
+library(edgeR)
+dge <- DGEList(counts = countData, group = colData$group)
+dim(dge)
+
+#Normalize by total count
+dge <- calcNormFactors(dge)
+
+#creat the contrast matrix ~ the samples we want to compare to one another
+design.matrix <- model.matrix(~ 0 + dge$samples$group)
+colnames(design.matrix) <- levels(dge$samples$group)
+
+#estimate dispersion parameter for GLM
+dge <- estimateGLMCommonDisp(dge, design.matrix) #common dispersion
+dge <- estimateGLMTrendedDisp(dge, design.matrix, method = 'power') #Trended dispersion
+dge <- estimateGLMTagwiseDisp(dge, design.matrix) #tag-wise dispersion
+
+plotBCV(dge) #plot mean-variance
+
+design.matrix <- model.matrix(~ 0 + dge$samples$group)
+colnames(design.matrix) <- levels(dge$samples$group)
+apply(dge, 2, function(x) any(is.na(x))) #check for NA values
+fit <- glmFit(dge, design.matrix) # model fitting 
+
+contrasts <- makeContrasts(CASE - CTRL, levels = design.matrix)
+lrt.edgeR <- glmLRT(fit, contrast = contrasts)
+
+edgeR_Results <- lrt.edgeR$table #Access results table
+sig <- decideTestsDGE(lrt.edgeR, adjust.method = 'BH', p.value = 0.05) #specify a threshold to identify genes as significant so we will use the Benjamini–Hochberg method
+genes_edger <- row.names(edgeR_Results)[which(sig !=0)]
+genes_edger_df <- as.data.frame(genes_edger)
+View(genes_edger_df) #the DE genes
+
+# and now we compare to DEseq2 results
+
+resultsNames(dds)
+contrasts_deseq2 <- list('group_CTRL_vs_CASE')
+deseq2_results <- results(dds, contrast = contrasts_deseq2)
+deseq2_results$threshold <- as.logical(deseq2_results$padj < 0.05)
+genes.deseq <- row.names(deseq2_results)[which(deseq2_results$threshold)]
+genes.deseq.df <- as.data.frame(genes.deseq)
+View(genes.deseq.df) #the DE genes
+
+#DEseq2 analysis captured 6979 genes as differentially expressed, while edgeR captured only 5170. But how do they overlap with one another ?
+
+library(gplots)
+venn(list(edgeR = genes_edger, DEseq2 = genes.deseq))
+```
+
+## Question 6
+```{r}
+library(compcodeR)
+options(knitr.duplicate.label = "allow")
+
+colData$condition <- c('CASE','CASE','CASE','CASE','CASE','CTRL','CTRL','CTRL','CTRL','CTRL') 
+cpd.rds <- compData(count.matrix = countData, sample.annotations = colData, info.parameters <- list(dataset = 'mydata.rds' , uID = "0123456789"))
+
+check_compData(cpd.rds)
+
+saveRDS(cpd.rds, file = 'mydata.rds')
+limma_result <- runDiffExp(data.file  = 'mydata.rds', 
+            result.extent = "voom.limma", Rmdfunction = "voom.limma.createRmd", 
+            output.directory = ".", norm.method = "TMM")
+edgeR.result <- runDiffExp(data.file = "mydata.rds", 
+            result.extent = "edgeR.exact", Rmdfunction = "edgeR.exact.createRmd", 
+            output.directory = ".", norm.method = "TMM", 
+            trend.method = "movingave", disp.type = "tagwise")
+ ttest_result <- runDiffExp(data.file = "mydata.rds", result.extent = "ttest", 
+            Rmdfunction = "ttest.createRmd", 
+            output.directory = ".", norm.method = "TMM")
+
+library(gplots)
+venn(list(edgeR = edgeR.result, voom.limma = limma_result, t.test = ttest_result))
+```
